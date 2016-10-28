@@ -1,8 +1,8 @@
 DATA SEGMENT
-COUNTDOWN DB 0
-TIMEINPUT DB 4,?,4 DUP(?);输入倒计时秒数，限制字符串长度为3，和1个回车符
+COUNTDOWN DW 0
+TIMEINPUT DB 6,?,6 DUP(?);输入倒计时秒数，限制字符串长度为3，和1个回车符
 STARTTIME DB 0
-TIMEPROMPT DB 0AH,0DH,'Please input a number(<255) to set the game timeout,input "0" to exit:','$'
+TIMEPROMPT DB 0AH,0DH,'Please input a number(<65535 seconds) to set the game timeout,input "0" to exit:','$'
 RANDOMNUM DB 0,0,0,0
 STARTPROMPT DB 0AH,0DH,'Game is on!','$'
 DATA ENDS
@@ -28,7 +28,8 @@ START:  MOV AX, DATA
         
         MOV CL, (TIMEINPUT + 1) ;字符串长度，即循环次数
         MOV DI, OFFSET (TIMEINPUT + 2) ;存放数据的字符串首地址
-TRANS:  MOV AL, 10
+        MOV AH, 0
+TRANS:  MOV AX, 10
         MOV DL, [DI] ;得到数字的ASCII码
         SUB DL, 30H ;得到数值
         CMP DL, 9 ;如果转成的数字大于9或小于0跳转到开始的地方（利用无符号减法溢出，不需判断是否小于0）
@@ -36,14 +37,14 @@ TRANS:  MOV AL, 10
         ADD BL, DL
         CMP CL, 1 ;如果是最后一个数字，则不再运行下面的乘10运算，直接结束转换
         JE SETCOUNT
-        MUL BL
+        MUL BX
         MOV BX, AX
         INC DI
         LOOP TRANS
         
 SETCOUNT:MOV AX, BX
         MOV BX, OFFSET COUNTDOWN
-        MOV [BX], AL
+        MOV [BX], AX
         
         CMP [COUNTDOWN], 0 ;输入倒计时秒数如果为0，则退出游戏
         JE EXIT
