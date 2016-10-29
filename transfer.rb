@@ -17,9 +17,6 @@ results.each do |res|
     end    
 end
 
-results.each do |r|
-    p r.join if r.join.length != 16
-end
 # 通过换行符分割每一条数据，然后写入目标文件
 File.open("answers.txt","w") do |f|
     results.each do |res|

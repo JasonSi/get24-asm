@@ -1,17 +1,27 @@
 DATA SEGMENT
-    PLAYTIME DW 0               ;记录用户输入的游戏时间
-    TIMEINPUT DB 6,?,6 DUP(?)   ;输入倒计时秒数，限制字符串长度为5，和1个回车符
+    PLAYTIME DW 0               ;记录玩家输入的游戏时间
+    TIMEINPUT DB 5,?,5 DUP(?)   ;输入倒计时秒数，限制字符串长度为5，和1个回车符
     STARTTIME DB 0              ;记录开始游戏时的系统时间
-    TIMEPROMPT DB 0AH,0DH,'Please input a number(<65535 seconds) to set the game timeout,input "0" to exit:','$' 
-    STARTPROMPT DB 0AH,0DH,'Game is on!','$'
+    TIMEPROMPT DB 0AH,0DH,'Please input a number(<=9999 seconds) to set the play time, input "0" to exit:',0AH,0DH,'$' 
+    STARTPROMPT DB 0AH,0DH,'Game is on! The four numbers are ','$'
     
-    CURRENTITEM DB 16 DUP(?)                ;当前的数字组合及答案内容，比如‘1118(1+(1+1))*8$’
-    FILEPATH DB 'C:\PROJECT\ANSWERS.TXT'    ;TODO: 改为相对路径
-    ANSWERS DB 7920 DUP(?)                  ;共有495条数据，每条数据占16字节
+    CURRENTITEM DB 16 DUP(?)    ;当前的数字组合及答案内容，比如‘1118(1+(1+1))*8$’
+    CURRENTNUM DB 4 DUP(?),'$'
+    FILEPATH DB 'ANSWERS.TXT'
+    ANSWERS DB 7920 DUP(?)      ;共有495条数据，每条数据占16字节
+    
+    INPUTPROMPT DB 0AH,0DH,'Input your solution, input "0" means no answer: ',0AH,0DH,'$'
+    EXPRESSION DB 20,?,20 DUP(?)    ;存储玩家输入的表达式
+    SUFFIXEXP DB 20 DUP(?)          ;存储转换后的后缀表达式
+    
+    WRONGANSWER DB 0AH,0DH,'The answer is wrong :-(','$'
+    ILLEGALFORMAT DB 0AH,0DH,'The format of your expression is illegal :-(','$'
+    ILLEGALDIGIT DB 0AH,0DH,'Can not use numbers like this :-(','$'
+    WINPROMPT DB 0AH,0DH,'Yeah! You got it~','$'
 DATA ENDS
 
 STACK SEGMENT
-    DB 20H DUP(0)
+    DB 100 DUP(0)
 STACK ENDS
 
 CODE SEGMENT
@@ -20,6 +30,8 @@ CODE SEGMENT
 START:  MOV AX, DATA
         MOV DS, AX
         MOV ES, AX
+        MOV AX, STACK
+        MOV SS, AX
         
         MOV AH, 3DH         ;读取磁盘文件，获得所有的数字组合和答案
         LEA DX, FILEPATH
@@ -35,15 +47,14 @@ START:  MOV AX, DATA
 GETTIME:LEA DX, TIMEPROMPT  ;提示输入游戏时间
         MOV AH, 09H
         INT 21H
-        CALL CRLF           ;回车换行
         
-        LEA DX, TIMEINPUT   ;获取用户输入的秒数（字符串）
+        LEA DX, TIMEINPUT   ;获取玩家输入的秒数（字符串）
         MOV AH, 0AH
         INT 21H
         
         MOV CL, (TIMEINPUT + 1) ;字符串长度，即循环次数
         LEA DI, (TIMEINPUT + 2) ;存放数据的字符串首地址
-        MOV AH, 0
+        MOV AX, 0
         MOV BX, 0
 TRANS:  MOV AX, 10
         MOV DL, [DI]    ;得到数字的ASCII码
@@ -74,45 +85,105 @@ SETTIME:MOV AX, BX
         MOV CX, 16              ;每条数据16字节，所以重复16次
         CLD
         REP MOVSB               ;将随机抽取的题目字符串存放到CURRENTITEM
+        LEA DI, CURRENTNUM      ;将数字部分放到CURRENTNUM
+        LEA SI, CURRENTITEM
+        MOV CX, 4
+        CLD
+        REP MOVSB
+        
+        LEA DX, STARTPROMPT     ;游戏开始，输出提示
+        MOV AH, 09H
+        INT 21H
+        LEA DX, CURRENTNUM      ;输出游戏的四个数字
+        MOV AH, 09H
+        INT 21H
+        
+TRY:    MOV AX, 0
+        MOV BX, 0
+        LEA DX, INPUTPROMPT     ;提示玩家输入表达式
+        MOV AH, 09H
+        INT 21H
+        
+        LEA DX, EXPRESSION      ;获取玩家输入的表达式
+        MOV AH, 0AH
+        INT 21H
+        
+        MOV AL, (EXPRESSION + 2)
+        CMP AL, '0'                 ;如果输入的表达式第一个字符是‘0’，则认为玩家回答“无解”
+        JNE FORMAT                  ;如果不是‘0’，则认为玩家输入了四则表达式
+        MOV AL, (CURRENTITEM + 4)   ;获取当前题目的答案的第一个字符送AL
+        CMP AL, '0'                 ;与‘0’比较，如果相等，则表示回答正确，答案是‘无解’
+        JE WIN                      ;赢了则可以直接跳转胜利，否则输出错误并跳转到TRY
+        LEA DX, WRONGANSWER         ;提示玩家回答错误
+        MOV AH, 09H
+        INT 21H
+        JMP TRY
+        
+FORMAT: CALL TOSUFFIX               ;返回值BX 存1或0，0表示表达式不符合规范
+        CMP BX, 1
+        JE MATCH
+        LEA DX, ILLEGALFORMAT       ;提示玩家表达式格式错误
+        MOV AH, 09H
+        INT 21H
+        JMP TRY
+
+MATCH:  CALL ISMATCH
+        CMP BX, 1
+        JE CACL
+        LEA DX, ILLEGALDIGIT        ;提示玩家表达式中的数字非法
+        MOV AH, 09H
+        INT 21H
+        JMP TRY
         
         
+CALC:   CALL CALCULATE    
+        CMP BX, 24
+        JE WIN
+        LEA DX, WRONGANSWER         ;提示玩家回答错误
+        MOV AH, 09H
+        INT 21H
+        JMP TRY
+        
+WIN:    LEA DX, WINPROMPT
+        MOV AH, 09H
+        INT 21H
+        JMP GETTIME
         
         
 EXIT:   MOV AX, 4C00H   ;返回到DOS
         INT 21H
 
-        
-CRLF PROC               ;打印回车换行的子程序
-    PUSH DX
-    PUSH AX
-    MOV DL, 0AH
-    MOV AH, 02H
-    INT 21H
-    MOV DL, 0DH
-    MOV AH, 02H
-    INT 21H
-    POP AX
-    POP DX
-    RET
-CRLF ENDP
+
     
 RAND PROC               ;随机数子程序，虽然一共有65536个数字，除以495的余数概率并不相等，但差异小于0.1%，忽略不计
-    PUSH CX
-    PUSH DX
-    PUSH AX
-    STI
-    MOV AX, 0           ;读时钟计数器值
-    INT 1AH
-    MOV AX, DX            
-    MOV CX, 495         ;除495，产生0~494余数
-    MOV DX, 0
-    DIV CX
-    MOV BX, DX          ;余数存BX，作随机数
-       
-    POP AX
-    POP DX
-    POP CX
-    RET
+        PUSH CX
+        PUSH DX
+        PUSH AX
+        STI
+        MOV AX, 0       ;读时钟滴答数
+        INT 1AH
+        MOV AX, DX            
+        MOV CX, 495     ;除495，产生0~494余数
+        MOV DX, 0
+        DIV CX
+        MOV BX, DX      ;余数存BX，作随机数
+           
+        POP AX
+        POP DX
+        POP CX
+        RET
 RAND ENDP
+
+TOSUFFIX PROC
+
+TOSUFFIX ENDP
+
+MATCH PROC
+
+MATCH ENDP
+
+CALCULATE PROC
+
+CALCULATE ENDP
 CODE ENDS
     END START
