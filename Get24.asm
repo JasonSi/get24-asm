@@ -3,7 +3,7 @@ DATA SEGMENT
     TIMEINPUT DB 5,?,5 DUP(?)   ;输入倒计时秒数，限制字符串长度为5，和1个回车符
     STARTTIME DB 0              ;记录开始游戏时的系统时间
     TIMEPROMPT DB 0AH,0DH,'Please input a number(<=9999 seconds) to set the play time, input "0" to exit:',0AH,0DH,'$' 
-    STARTPROMPT DB 0AH,0DH,'Game is on! The four numbers are ','$'
+    STARTPROMPT DB 0AH,0DH,'Game is on! Here are four numbers ','$'
     
     CURRENTITEM DB 16 DUP(?)    ;当前的数字组合及答案内容，比如‘1118(1+(1+1))*8$’
     CURRENTNUM DB 4 DUP(?),'$'
@@ -11,13 +11,13 @@ DATA SEGMENT
     ANSWERS DB 7920 DUP(?)      ;共有495条数据，每条数据占16字节
     
     INPUTPROMPT DB 0AH,0DH,'Input your solution, input "0" means no answer: ',0AH,0DH,'$'
-    EXPRESSION DB 20,?,20 DUP(?)    ;存储玩家输入的表达式
-    SUFFIXEXP DB 20 DUP(?)          ;存储转换后的后缀表达式
+    EXPRESSION DB 20,?,20 DUP(0)    ;存储玩家输入的表达式
+    SUFFIXEXP DB 20 DUP(0),'$'          ;存储转换后的后缀表达式
     
-    WRONGANSWER DB 0AH,0DH,'The answer is wrong :-(','$'
+    WRONGANSWER DB 0AH,0DH,'Wrong Solution!','$'
     ILLEGALFORMAT DB 0AH,0DH,'The format of your expression is illegal :-(','$'
     ILLEGALDIGIT DB 0AH,0DH,'Can not use numbers like this :-(','$'
-    WINPROMPT DB 0AH,0DH,'Yeah! You got it~','$'
+    WINPROMPT DB 0AH,0DH,'Yeah! You win the game!',0AH,0DH,'$'
 DATA ENDS
 
 STACK SEGMENT
@@ -73,7 +73,7 @@ SETTIME:MOV AX, BX
         LEA BX, PLAYTIME
         MOV [BX], AX
         
-        CMP AX, 0       ;输入倒计时秒数如果为0，则退出游戏
+        CMP AX, 0               ;输入倒计时秒数如果为0，则退出游戏
         JE EXIT
         
         CALL RAND               ;获取一个0~494的随机数，存放在BX
@@ -97,12 +97,15 @@ SETTIME:MOV AX, BX
         LEA DX, CURRENTNUM      ;输出游戏的四个数字
         MOV AH, 09H
         INT 21H
-        
 TRY:    MOV AX, 0
         MOV BX, 0
         LEA DX, INPUTPROMPT     ;提示玩家输入表达式
         MOV AH, 09H
         INT 21H
+        
+        CALL CLEAREXP 
+       
+        
         
         LEA DX, EXPRESSION      ;获取玩家输入的表达式
         MOV AH, 0AH
@@ -129,7 +132,7 @@ FORMAT: CALL TOSUFFIX               ;返回值BX 存1或0，0表示表达式不�
 
 MATCH:  CALL ISMATCH
         CMP BX, 1
-        JE CACL
+        JE CALC
         LEA DX, ILLEGALDIGIT        ;提示玩家表达式中的数字非法
         MOV AH, 09H
         INT 21H
@@ -144,7 +147,19 @@ CALC:   CALL CALCULATE
         INT 21H
         JMP TRY
         
-WIN:    LEA DX, WINPROMPT
+WIN:    MOV DL, 0AH
+        MOV AH, 02H
+        INT 21H
+        
+        MOV DL, 0DH
+        MOV AH, 02H
+        INT 21H 
+        
+        LEA DX, SUFFIXEXP
+        MOV AH, 09H
+        INT 21H
+        
+        LEA DX, WINPROMPT
         MOV AH, 09H
         INT 21H
         JMP GETTIME
@@ -155,7 +170,7 @@ EXIT:   MOV AX, 4C00H   ;返回到DOS
 
 
     
-RAND PROC               ;随机数子程序，虽然一共有65536个数字，除以495的余数概率并不相等，但差异小于0.1%，忽略不计
+RAND PROC               ;随机数子程序，虽然一共有65536个数字，除以495的余数概率并不完全相等，但差异小于0.1%，忽略不计
         PUSH CX
         PUSH DX
         PUSH AX
@@ -175,15 +190,116 @@ RAND PROC               ;随机数子程序，虽然一共有65536个数字，�
 RAND ENDP
 
 TOSUFFIX PROC
+        PUSH AX
+        PUSH CX
+        MOV AX, 0
+        MOV BX, 0
+        MOV CX, 0
+        ;MOV CL, (EXPRESSION + 1)
+        LEA DI, (EXPRESSION + 2)
+        LEA SI, SUFFIXEXP
+        
+READ:   MOV AL, [DI]
+        CMP AL, 0DH
+        JE POPALL
+        INC DI
+        CMP AL, '9'
+        JG FAIL
+        CMP AL, '0'
+        JG PUSHNUM
+        CMP AL, '('
+        JE LPRENTH
+        CMP AL, ')'
+        JE RPRENTH
+        
+OP:     MOV BP, SP
+        CMP AL, '+'
+        JE L1
+        CMP AL, '-'
+        JE L1
+        CMP AL, '/'
+        JE L2
+        CMP AL, '*'
+        JE L2
+        JMP FAIL
+ 
+PUSHOP: PUSH AX
+        INC CX
+        JMP READ
+        
+PUSHNUM:SUB AL, 30H
+        MOV [SI], AL
+        INC SI
+        JMP READ
+        
+LPRENTH:PUSH AX
+        INC CX
+        JMP READ
 
+RPRENTH:CMP CX, 0       ;如果栈已经空了，则说明括号匹配不正确，退出
+        JE FAIL
+        POP AX
+        DEC CX
+        CMP AL, '('     ;如果是弹出左括号，则完成，继续读取下一个，否则继续循环
+        JMP READ
+        MOV [SI], AL
+        INC SI
+        JMP RPRENTH
+        
+L1:     CMP BYTE PTR [BP], '+'
+        JE POPOP
+        CMP BYTE PTR [BP], '-'
+        JE POPOP
+L2:     CMP BYTE PTR [BP], '*'
+        JE POPOP
+        CMP BYTE PTR [BP], '/'
+        JE POPOP
+        JMP PUSHOP
+
+POPOP:  POP BX
+        DEC CX
+        MOV[SI], BL
+        INC SI
+        JMP OP
+        
+POPALL: POP AX
+        MOV[SI], AL
+        INC SI
+        LOOP POPALL
+        POP CX
+        POP AX
+        
+DONE:   MOV BX, 1
+        RET
+FAIL:   MOV BX, 0
+        RET
 TOSUFFIX ENDP
 
-MATCH PROC
-
-MATCH ENDP
+ISMATCH PROC
+        MOV BX, 1
+        RET
+ISMATCH ENDP
 
 CALCULATE PROC
-
+        MOV BX, 24
+        RET
 CALCULATE ENDP
+
+CLEAREXP PROC
+       
+        LEA DI, EXPRESSION + 2
+        MOV CX, 20
+        CLD
+        MOV AX, 0
+        REP STOSB
+        
+        LEA DI, SUFFIXEXP
+        MOV CX, 20
+        CLD
+        MOV AX, 0
+        REP STOSB
+        RET
+        
+CLEAREXP ENDP
 CODE ENDS
     END START
