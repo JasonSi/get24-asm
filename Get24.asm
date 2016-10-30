@@ -103,17 +103,15 @@ TRY:    MOV AX, 0
         MOV AH, 09H
         INT 21H
         
-        CALL CLEAREXP 
+        CALL CLEAREXP           ;清理缓冲区
        
-        
-        
         LEA DX, EXPRESSION      ;获取玩家输入的表达式
         MOV AH, 0AH
         INT 21H
         
         MOV AL, (EXPRESSION + 2)
         CMP AL, '0'                 ;如果输入的表达式第一个字符是‘0’，则认为玩家回答“无解”
-        JNE FORMAT                  ;如果不是‘0’，则认为玩家输入了四则表达式
+        JNE CHECK                   ;如果不是‘0’，则认为玩家输入了四则表达式
         MOV AL, (CURRENTITEM + 4)   ;获取当前题目的答案的第一个字符送AL
         CMP AL, '0'                 ;与‘0’比较，如果相等，则表示回答正确，答案是‘无解’
         JE WIN                      ;赢了则可以直接跳转胜利，否则输出错误并跳转到TRY
@@ -121,17 +119,25 @@ TRY:    MOV AX, 0
         MOV AH, 09H
         INT 21H
         JMP TRY
+
+CHECK:  CALL CHECKEXP               ;先检查是否有连续数字或运算符，比如23+3或者2+-4等情况
+        CMP BX, 1                   ;根据返回值，如果CHECKEXP正确，则继续格式化，即FORMAT
+        JE FORMAT
+        LEA DX, ILLEGALFORMAT       ;提示玩家表达式格式错误
+        MOV AH, 09H
+        INT 21H
+        JMP TRY
         
 FORMAT: CALL TOSUFFIX               ;返回值BX 存1或0，0表示表达式不符合规范
-        CMP BX, 1
+        CMP BX, 1                   ;根据返回值，如果转换后缀表达式结果正确，则匹配数字是否符合要求
         JE MATCH
         LEA DX, ILLEGALFORMAT       ;提示玩家表达式格式错误
         MOV AH, 09H
         INT 21H
         JMP TRY
 
-MATCH:  CALL ISMATCH
-        CMP BX, 1
+MATCH:  CALL ISMATCH                ;检测玩家输入的表达式中数字是否与题目完全匹配
+        CMP BX, 1                   ;根据返回值，如果数字匹配，则表达式合法，开始计算
         JE CALC
         LEA DX, ILLEGALDIGIT        ;提示玩家表达式中的数字非法
         MOV AH, 09H
@@ -139,15 +145,15 @@ MATCH:  CALL ISMATCH
         JMP TRY
         
         
-CALC:   CALL CALCULATE    
-        CMP BX, 24
+CALC:   CALL CALCULATE              ;计算玩家输入的表达式
+        CMP BX, 24                  ;如果结果正确是24，则表示输入正确，赢得比赛
         JE WIN
         LEA DX, WRONGANSWER         ;提示玩家回答错误
         MOV AH, 09H
         INT 21H
         JMP TRY
         
-WIN:    MOV DL, 0AH
+WIN:    MOV DL, 0AH;测试用 待删
         MOV AH, 02H
         INT 21H
         
@@ -189,13 +195,68 @@ RAND PROC               ;随机数子程序，虽然一共有65536个数字，�
         RET
 RAND ENDP
 
+CHECKEXP PROC       ;这个子程序用来检测表达式是否有连续数字或运算符，通过置AH为1或0来记录状态，更详细的检测在TOSUFFIX中
+        PUSH AX
+        PUSH CX
+        MOV AX, 0
+        MOV BX, 0
+        LEA DI, (EXPRESSION + 2)
+        MOV CL, (EXPRESSION + 1)
+CNEXT:  MOV AL, [DI]
+        INC DI
+        CMP AL, '9'
+        JG COP
+        CMP AL, '0'
+        JG CNUM
+        CMP AL, '+'
+        JE COP
+        CMP AL, '-'
+        JE COP
+        CMP AL, '*'
+        JE COP
+        CMP AL, '/'
+        JE COP
+        CMP AL, '('
+        JE LOOPNEXT
+        CMP AL, ')'
+        JE LOOPNEXT
+        JMP CWRONG
+LOOPNEXT:LOOP CNEXT
+        JMP CRIGHT
+        
+COP:    CMP AH, 0
+        JE CWRONG
+        MOV AH, 0
+        DEC CL
+        CMP CL, 0
+        JE CRIGHT
+        JMP CNEXT
+        
+CNUM:   CMP AH, 1
+        JE CWRONG
+        MOV AH, 1
+        DEC CL
+        CMP CL, 0
+        JE CRIGHT
+        JMP CNEXT
+ 
+CWRONG: POP CX
+        POP AX
+        MOV BX, 0
+        RET
+        
+CRIGHT: POP CX
+        POP AX
+        MOV BX, 1
+        RET
+CHECKEXP ENDP
+
 TOSUFFIX PROC
         PUSH AX
         PUSH CX
         MOV AX, 0
         MOV BX, 0
         MOV CX, 0
-        ;MOV CL, (EXPRESSION + 1)
         LEA DI, (EXPRESSION + 2)
         LEA SI, SUFFIXEXP
         
@@ -238,15 +299,15 @@ LPRENTH:PUSH AX
 
 RPRENTH:CMP CX, 0       ;如果栈已经空了，则说明括号匹配不正确，退出
         JE FAIL
-        POP AX
+        POP BX
         DEC CX
-        CMP AL, '('     ;如果是弹出左括号，则完成，继续读取下一个，否则继续循环
-        JMP READ
-        MOV [SI], AL
+        CMP BL, '('     ;如果是弹出左括号，则完成，继续读取下一个，否则继续循环
+        JE READ
+        MOV [SI], BL
         INC SI
         JMP RPRENTH
         
-L1:     CMP BYTE PTR [BP], '+'
+L1:     CMP BYTE PTR [BP], '+'      ;L1表示优先级1，如果是乘除将直接跳过和L1的比较
         JE POPOP
         CMP BYTE PTR [BP], '-'
         JE POPOP
@@ -262,16 +323,29 @@ POPOP:  POP BX
         INC SI
         JMP OP
         
-POPALL: POP AX
-        MOV[SI], AL
+POPALL: CMP CL, 0       ;如果玩家捣乱输入的表达式只有一个数字，没有可以pop的，所以加一个判断
+        JE DONE
+        POP AX
+        MOV [SI], AL
         INC SI
         LOOP POPALL
-        POP CX
-        POP AX
         
-DONE:   MOV BX, 1
+        LEA DI, (SUFFIXEXP) ;遍历后缀表达式
+        MOV BX, DI
+        MOV CX, 20
+        MOV AL, '('         ;如果发现还有左括号，则说明表达式不合法
+        CLD
+        REPNZ SCASB
+        JZ FAIL
+        
+        
+DONE:   POP CX          
+        POP AX
+        MOV BX, 1       ;转换成功则返回1
         RET
-FAIL:   MOV BX, 0
+FAIL:   POP CX
+        POP AX
+        MOV BX, 0       ;转换失败则返回0
         RET
 TOSUFFIX ENDP
 
@@ -286,20 +360,18 @@ CALCULATE PROC
 CALCULATE ENDP
 
 CLEAREXP PROC
-       
-        LEA DI, EXPRESSION + 2
+        LEA DI, EXPRESSION + 2  ;将EXPRESSION缓冲区第二位以后清零
         MOV CX, 20
         CLD
         MOV AX, 0
         REP STOSB
         
-        LEA DI, SUFFIXEXP
+        LEA DI, SUFFIXEXP       ;将SUFFIXEXP全部清零
         MOV CX, 20
         CLD
         MOV AX, 0
         REP STOSB
         RET
-        
 CLEAREXP ENDP
 CODE ENDS
     END START
