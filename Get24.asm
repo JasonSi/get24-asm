@@ -229,7 +229,7 @@ COP:    CMP AH, 0
         MOV AH, 0
         DEC CL
         CMP CL, 0
-        JE CRIGHT
+        JE CWRONG
         JMP CNEXT
         
 CNUM:   CMP AH, 1
@@ -355,7 +355,57 @@ ISMATCH PROC
 ISMATCH ENDP
 
 CALCULATE PROC
-        MOV BX, 24
+        MOV AX, 0
+        MOV BX, 0
+        MOV DX, 0
+        
+        LEA DI, SUFFIXEXP
+CCLP:   MOV DL, [DI]
+        CMP DL, 0
+        JE CCDONE
+        INC DI 
+        CMP DL, '+'
+        JE CCPLUS
+        CMP DL, '-'
+        JE CCMINUS
+        CMP DL, '*'
+        JE CCMUL
+        CMP DL, '/'
+        JE CCDIV
+        CMP DL, 9
+        JNG CCNUM
+        JMP CCLP
+        
+CCPLUS: POP BX
+        POP AX
+        ADD BL, AL
+        PUSH BX
+        JMP CCLP
+
+CCMINUS:POP BX
+        POP AX
+        SUB AL, BL
+        PUSH AX
+        JMP CCLP
+
+CCMUL:  POP BX
+        POP AX
+        MUL BL
+        MOV AH, 0
+        PUSH AX
+        JMP CCLP
+
+CCDIV:  POP BX
+        POP AX
+        DIV BL
+        MOV AH, 0
+        PUSH AX
+        JMP CCLP
+
+CCNUM:  PUSH DX
+        JMP CCLP
+        
+CCDONE: POP BX
         RET
 CALCULATE ENDP
 
