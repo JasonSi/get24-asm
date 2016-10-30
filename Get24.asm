@@ -7,6 +7,7 @@ DATA SEGMENT
     
     CURRENTITEM DB 16 DUP(?)    ;当前的数字组合及答案内容，比如‘1118(1+(1+1))*8$’
     CURRENTNUM DB 4 DUP(?),'$'
+    NUMBUFFER DB 4 DUP(?),'$'
     FILEPATH DB 'ANSWERS.TXT'
     ANSWERS DB 7920 DUP(?)      ;共有495条数据，每条数据占16字节
     
@@ -153,19 +154,7 @@ CALC:   CALL CALCULATE              ;计算玩家输入的表达式
         INT 21H
         JMP TRY
         
-WIN:    MOV DL, 0AH;测试用 待删
-        MOV AH, 02H
-        INT 21H
-        
-        MOV DL, 0DH
-        MOV AH, 02H
-        INT 21H 
-        
-        LEA DX, SUFFIXEXP
-        MOV AH, 09H
-        INT 21H
-        
-        LEA DX, WINPROMPT
+WIN:    LEA DX, WINPROMPT
         MOV AH, 09H
         INT 21H
         JMP GETTIME
@@ -350,7 +339,40 @@ FAIL:   POP CX
 TOSUFFIX ENDP
 
 ISMATCH PROC
-        MOV BX, 1
+        MOV AX, 0
+        MOV BX, 0
+        
+        LEA DI, NUMBUFFER       ;将数字部分放到NUMBUFFER 以供后面用来MATCH数字
+        LEA SI, CURRENTITEM
+        MOV CX, 4
+        CLD
+        REP MOVSB
+        
+        LEA DI, SUFFIXEXP
+MTLP:   MOV DL, [DI]            ;外层循环，遍历后缀表达式
+        CMP DL, 0
+        JE MTRIGHT
+        INC DI
+        CMP DL, 9
+        JG MTLP
+        LEA SI, NUMBUFFER
+BFLP:   MOV AL, [SI]            ;内层循环，和NUMBUFFER比较
+        CMP AL, '$'             ;如果扫描到了'$'，说明使用了未提供的数字，返回错误
+        JE MTWRONG
+        INC SI
+        SUB AL, 30H             ;将ASCII转为数值，方便比较
+        CMP AL, 0               ;如果为0，则跳过
+        JE BFLP
+        CMP AL, DL
+        JNE BFLP
+        MOV CL, 0               ;如果匹配到了则将NUMBUFER中对应的数置为0
+        MOV [SI] - 1, CL
+        JMP MTLP
+        
+MTWRONG:MOV BX, 0        
+        RET
+        
+MTRIGHT:MOV BX, 1
         RET
 ISMATCH ENDP
 
