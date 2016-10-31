@@ -1,8 +1,9 @@
 DATA SEGMENT
     PLAYTIME DW 0               ;记录玩家输入的游戏时间
-    TIMEINPUT DB 5,?,5 DUP(?)   ;输入倒计时秒数，限制字符串长度为5，和1个回车符
-    STARTTIME DB 0              ;记录开始游戏时的系统时间
-    TIMEPROMPT DB 0AH,0DH,'Please input a number(<=9999 seconds) to set the play time, input "0" to exit:',0AH,0DH,'$' 
+    TIMEINPUT DB 5,?,5 DUP(0)   ;输入倒计时秒数，限制字符串长度为4，和1个回车符
+    STARTTIME DB 3 DUP(0)       ;记录开始游戏时的系统时间（时：分：秒）
+    NOWTIME DB 3 DUP(0)         ;记录当前系统时间
+    TIMEPROMPT DB 0AH,0DH,0AH,0DH,'Please input a number(<3600 seconds) to set the play time, input "0" to exit:',0AH,0DH,'$' 
     STARTPROMPT DB 0AH,0DH,'Game is on! Here are four numbers ','$'
     
     CURRENTITEM DB 16 DUP(?)    ;当前的数字组合及答案内容，比如‘1118(1+(1+1))*8$’
@@ -19,6 +20,10 @@ DATA SEGMENT
     ILLEGALFORMAT DB 0AH,0DH,'The format of your expression is illegal :-(','$'
     ILLEGALDIGIT DB 0AH,0DH,'Can not use numbers like this :-(','$'
     WINPROMPT DB 0AH,0DH,'Yeah! You win the game!',0AH,0DH,'$'
+    
+    LOSTPROMPT DB 0AH,0DH,'Sorry, you lost the game!','$'
+    NOANSWERPROMPT DB 0AH,0DH,'There is no answer for this question.','$'
+    ANSWERPROMPT DB 0AH,0DH,'A reference answer of this question is:','$'
 DATA ENDS
 
 STACK SEGMENT
@@ -49,6 +54,8 @@ GETTIME:LEA DX, TIMEPROMPT  ;提示输入游戏时间
         MOV AH, 09H
         INT 21H
         
+        CALL CLEARTIME      ;清理玩家输入的时间缓存区
+        
         LEA DX, TIMEINPUT   ;获取玩家输入的秒数（字符串）
         MOV AH, 0AH
         INT 21H
@@ -76,6 +83,8 @@ SETTIME:MOV AX, BX
         
         CMP AX, 0               ;输入倒计时秒数如果为0，则退出游戏
         JE EXIT
+        CMP AX, 3600
+        JG GETTIME
         
         CALL RAND               ;获取一个0~494的随机数，存放在BX
         MOV AX, 16              ;每个数据占16字节
@@ -98,6 +107,9 @@ SETTIME:MOV AX, BX
         LEA DX, CURRENTNUM      ;输出游戏的四个数字
         MOV AH, 09H
         INT 21H
+        
+        CALL SETSTARTTIME       ;记录游戏开始时的系统时间
+        
 TRY:    MOV AX, 0
         MOV BX, 0
         LEA DX, INPUTPROMPT     ;提示玩家输入表达式
@@ -110,6 +122,10 @@ TRY:    MOV AX, 0
         MOV AH, 0AH
         INT 21H
         
+        CALL ISINTIME
+        CMP BX, 1
+        JNE LOST
+        
         MOV AL, (EXPRESSION + 2)
         CMP AL, '0'                 ;如果输入的表达式第一个字符是‘0’，则认为玩家回答“无解”
         JNE CHECK                   ;如果不是‘0’，则认为玩家输入了四则表达式
@@ -120,6 +136,12 @@ TRY:    MOV AX, 0
         MOV AH, 09H
         INT 21H
         JMP TRY
+        
+LOST:   LEA DX, LOSTPROMPT
+        MOV AH, 09H
+        INT 21H
+        CALL SHOWANSWER 
+        JMP GETTIME
 
 CHECK:  CALL CHECKEXP               ;先检查是否有连续数字或运算符，比如23+3或者2+-4等情况
         CMP BX, 1                   ;根据返回值，如果CHECKEXP正确，则继续格式化，即FORMAT
@@ -432,6 +454,8 @@ CCDONE: POP BX
 CALCULATE ENDP
 
 CLEAREXP PROC
+        PUSH AX
+        PUSH CX
         LEA DI, EXPRESSION + 2  ;将EXPRESSION缓冲区第二位以后清零
         MOV CX, 20
         CLD
@@ -443,7 +467,92 @@ CLEAREXP PROC
         CLD
         MOV AX, 0
         REP STOSB
+        
+        POP CX
+        POP AX
         RET
 CLEAREXP ENDP
+
+CLEARTIME PROC
+        PUSH AX
+        PUSH CX
+        LEA DI, TIMEINPUT + 2  ;将EXPRESSION缓冲区第二位以后清零
+        MOV CX, 5
+        CLD
+        MOV AX, 0
+        REP STOSB
+        
+        POP CX
+        POP AX
+        RET
+CLEARTIME ENDP
+
+SETSTARTTIME PROC
+        PUSH AX
+        PUSH CX
+        PUSH DX
+        
+        MOV AH, 02H
+        INT 1AH
+        LEA DI, STARTTIME
+        MOV [DI], CH        ;小时的BCD码
+        MOV [DI] + 1, CL    ;分钟
+        MOV [DI] + 2, DH    ;秒
+        
+        POP DX
+        POP CX
+        POP AX
+        RET
+SETSTARTTIME ENDP
+
+ISINTIME PROC
+        PUSH AX
+        PUSH CX
+        PUSH DX
+        
+        MOV AX, 0   ;清零
+        MOV BX, 0
+        MOV DX, 0
+        
+        MOV AH, 02H
+        INT 1AH
+        LEA DI, NOWTIME
+        MOV [DI], CH        ;小时的BCD码
+        MOV [DI] + 1, CL    ;分钟
+        MOV [DI] + 2, DH    ;秒
+
+        MOV BX, 0
+        POP DX
+        POP CX
+        POP AX
+        RET        
+ISINTIME ENDP
+
+SHOWANSWER PROC
+        PUSH AX
+
+        LEA DI, CURRENTITEM + 4
+        MOV AL, [DI]
+        CMP AL, '0'
+        JE SHOWNO
+        
+        LEA DX, ANSWERPROMPT    ;显示答案提示
+        MOV AH, 09H
+        INT 21H
+        
+        LEA DX, CURRENTITEM + 4 ;显示参考答案
+        MOV AH, 09H
+        INT 21H
+        JMP SHOWDONE
+        
+SHOWNO: LEA DX, NOANSWERPROMPT  ;输出答案：无解
+        MOV AH, 09H
+        INT 21H
+        JMP SHOWDONE
+        
+SHOWDONE:POP AX
+        RET
+SHOWANSWER ENDP
+
 CODE ENDS
     END START
