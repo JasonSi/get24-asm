@@ -8,7 +8,7 @@ results = items.map{ |i| i.gsub(/\s/, '').split(':') }
 results.reject!{ |res| res[0].length > 4 }
 
 
-# 将所有无解的条目，替换成一个0表示答案
+# 将所有无解的条目，替换成一坨0表示答案
 results.each do |res|
     if res[1].include?("noanswer!") 
         res[1] = "00000000000$"
@@ -17,7 +17,7 @@ results.each do |res|
     end    
 end
 
-# 通过换行符分割每一条数据，然后写入目标文件
+# 通过美元符分割每一条数据，然后写入目标文件
 File.open("answers.txt","w") do |f|
     results.each do |res|
         f.syswrite(res.join)
