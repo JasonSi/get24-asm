@@ -3,24 +3,24 @@ DATA SEGMENT
     TIMEINPUT DB 5,?,5 DUP(0)   ;输入倒计时秒数，限制字符串长度为4，和1个回车符
     STARTTIME DB 3 DUP(0)       ;记录开始游戏时的系统时间（时：分：秒）
     NOWTIME DB 3 DUP(0)         ;记录当前系统时间
-    TIMEPROMPT DB 0AH,0DH,0AH,0DH,'Please input a number(<3600 seconds) to set the play time, input "0" to exit:',0AH,0DH,'$' 
+    TIMEPROMPT DB 0AH,0DH,0AH,0DH,'Please input a number(<3600 seconds) to set the play time, input "0" to exit:',0AH,0DH,'$'
     STARTPROMPT DB 0AH,0DH,'Game is on! Here are four numbers ','$'
-    
+
     CURRENTITEM DB 16 DUP(?)    ;当前的数字组合及答案内容，比如‘1118(1+(1+1))*8$’
     CURRENTNUM DB 4 DUP(?),'$'  ;记录当前的数字
     NUMBUFFER DB 4 DUP(?),'$'   ;和上面一样，用于判断玩家数字合法的缓冲区
     FILEPATH DB 'ANSWERS.TXT'
     ANSWERS DB 7920 DUP(?)      ;共有495条数据，每条数据占16字节
-    
+
     INPUTPROMPT DB 0AH,0DH,'Input your solution, input "0" means no answer: ',0AH,0DH,'$'
     EXPRESSION DB 20,?,20 DUP(0)    ;存储玩家输入的表达式
     SUFFIXEXP DB 20 DUP(0),'$'          ;存储转换后的后缀表达式
-    
+
     WRONGANSWER DB 0AH,0DH,'Wrong Solution!','$'
     ILLEGALFORMAT DB 0AH,0DH,'The format of your expression is illegal :-(','$'
     ILLEGALDIGIT DB 0AH,0DH,'Can not use numbers like this :-(','$'
     WINPROMPT DB 0AH,0DH,'Yeah! You win the game!',0AH,0DH,'$'
-    
+
     LOSTPROMPT DB 0AH,0DH,'Sorry, you lost the game!','$'
     NOANSWERPROMPT DB 0AH,0DH,'There is no answer for this question.','$'
     ANSWERPROMPT DB 0AH,0DH,'A reference answer of this question is:','$'
@@ -32,18 +32,18 @@ STACK ENDS
 
 CODE SEGMENT
     ASSUME CS:CODE,DS:DATA,SS:STACK
-    
+
 START:  MOV AX, DATA
         MOV DS, AX
         MOV ES, AX
         MOV AX, STACK
         MOV SS, AX
-        
+
         MOV AH, 3DH         ;读取磁盘文件，获得所有的数字组合和答案
         LEA DX, FILEPATH
         MOV AL, 2
         INT 21H
-        
+
         LEA DX, ANSWERS
         MOV BX, AX
         MOV CX, 7920
@@ -53,13 +53,13 @@ START:  MOV AX, DATA
 GETTIME:LEA DX, TIMEPROMPT  ;提示输入游戏时间
         MOV AH, 09H
         INT 21H
-        
+
         CALL CLEARTIME      ;清理玩家输入的时间缓存区
-        
+
         LEA DX, TIMEINPUT   ;获取玩家输入的秒数（字符串）
         MOV AH, 0AH
         INT 21H
-        
+
         MOV CL, (TIMEINPUT + 1) ;字符串长度，即循环次数
         LEA DI, (TIMEINPUT + 2) ;存放数据的字符串首地址
         MOV AX, 0
@@ -76,16 +76,16 @@ TRANS:  MOV AX, 10
         MOV BX, AX
         INC DI
         LOOP TRANS
-        
+
 SETTIME:MOV AX, BX
         LEA BX, PLAYTIME
         MOV [BX], AX
-        
+
         CMP AX, 0               ;输入倒计时秒数如果为0，则退出游戏
         JE EXIT
         CMP AX, 3600
         JG GETTIME
-        
+
         CALL RAND               ;获取一个0~494的随机数，存放在BX
         MOV AX, 16              ;每个数据占16字节
         MUL BX                  ;随机数乘以16得到某一条随机结果的首地址
@@ -100,32 +100,32 @@ SETTIME:MOV AX, BX
         MOV CX, 4
         CLD
         REP MOVSB
-        
+
         LEA DX, STARTPROMPT     ;游戏开始，输出提示
         MOV AH, 09H
         INT 21H
         LEA DX, CURRENTNUM      ;输出游戏的四个数字
         MOV AH, 09H
         INT 21H
-        
+
         CALL SETSTARTTIME       ;记录游戏开始时的系统时间
-        
+
 TRY:    MOV AX, 0
         MOV BX, 0
         LEA DX, INPUTPROMPT     ;提示玩家输入表达式
         MOV AH, 09H
         INT 21H
-        
+
         CALL CLEAREXP           ;清理缓冲区
-       
+
         LEA DX, EXPRESSION      ;获取玩家输入的表达式
         MOV AH, 0AH
         INT 21H
-        
+
         CALL ISINTIME
         CMP BX, 1
         JNE LOST
-        
+
         MOV AL, (EXPRESSION + 2)
         CMP AL, '0'                 ;如果输入的表达式第一个字符是‘0’，则认为玩家回答“无解”
         JNE CHECK                   ;如果不是‘0’，则认为玩家输入了四则表达式
@@ -136,11 +136,11 @@ TRY:    MOV AX, 0
         MOV AH, 09H
         INT 21H
         JMP TRY
-        
+
 LOST:   LEA DX, LOSTPROMPT
         MOV AH, 09H
         INT 21H
-        CALL SHOWANSWER 
+        CALL SHOWANSWER
         JMP GETTIME
 
 CHECK:  CALL CHECKEXP               ;先检查是否有连续数字或运算符，比如23+3或者2+-4等情况
@@ -150,7 +150,7 @@ CHECK:  CALL CHECKEXP               ;先检查是否有连续数字或运算符�
         MOV AH, 09H
         INT 21H
         JMP TRY
-        
+
 FORMAT: CALL TOSUFFIX               ;返回值BX 存1或0，0表示表达式不符合规范
         CMP BX, 1                   ;根据返回值，如果转换后缀表达式结果正确，则匹配数字是否符合要求
         JE MATCH
@@ -166,8 +166,8 @@ MATCH:  CALL ISMATCH                ;检测玩家输入的表达式中数字是�
         MOV AH, 09H
         INT 21H
         JMP TRY
-        
-        
+
+
 CALC:   CALL CALCULATE              ;计算玩家输入的表达式
         CMP BX, 24                  ;如果结果正确是24，则表示输入正确，赢得比赛
         JE WIN
@@ -175,18 +175,18 @@ CALC:   CALL CALCULATE              ;计算玩家输入的表达式
         MOV AH, 09H
         INT 21H
         JMP TRY
-        
+
 WIN:    LEA DX, WINPROMPT
         MOV AH, 09H
         INT 21H
         JMP GETTIME
-        
-        
+
+
 EXIT:   MOV AX, 4C00H   ;返回到DOS
         INT 21H
 
 
-    
+
 RAND PROC               ;随机数子程序，虽然一共有65536个数字，除以495的余数概率并不完全相等，但差异小于0.1%，忽略不计
         PUSH CX
         PUSH DX
@@ -194,12 +194,12 @@ RAND PROC               ;随机数子程序，虽然一共有65536个数字，�
         STI
         MOV AX, 0       ;读时钟滴答数
         INT 1AH
-        MOV AX, DX            
+        MOV AX, DX
         MOV CX, 495     ;除495，产生0~494余数
         MOV DX, 0
         DIV CX
         MOV BX, DX      ;余数存BX，作随机数
-           
+
         POP AX
         POP DX
         POP CX
@@ -234,7 +234,7 @@ CNEXT:  MOV AL, [DI]
         JMP CWRONG
 LOOPNEXT:LOOP CNEXT
         JMP CRIGHT
-        
+
 COP:    CMP AH, 0
         JE CWRONG
         MOV AH, 0
@@ -242,7 +242,7 @@ COP:    CMP AH, 0
         CMP CL, 0
         JE CWRONG
         JMP CNEXT
-        
+
 CNUM:   CMP AH, 1
         JE CWRONG
         MOV AH, 1
@@ -250,12 +250,12 @@ CNUM:   CMP AH, 1
         CMP CL, 0
         JE CRIGHT
         JMP CNEXT
- 
+
 CWRONG: POP CX
         POP AX
         MOV BX, 0
         RET
-        
+
 CRIGHT: POP CX
         POP AX
         MOV BX, 1
@@ -270,7 +270,7 @@ TOSUFFIX PROC
         MOV CX, 0
         LEA DI, (EXPRESSION + 2)
         LEA SI, SUFFIXEXP
-        
+
 READ:   MOV AL, [DI]
         CMP AL, 0DH
         JE POPALL
@@ -283,7 +283,7 @@ READ:   MOV AL, [DI]
         JE LPRENTH
         CMP AL, ')'
         JE RPRENTH
-        
+
 OP:     MOV BP, SP
         CMP AL, '+'
         JE L1
@@ -294,16 +294,16 @@ OP:     MOV BP, SP
         CMP AL, '*'
         JE L2
         JMP FAIL
- 
+
 PUSHOP: PUSH AX
         INC CX
         JMP READ
-        
+
 PUSHNUM:SUB AL, 30H
         MOV [SI], AL
         INC SI
         JMP READ
-        
+
 LPRENTH:PUSH AX
         INC CX
         JMP READ
@@ -317,7 +317,7 @@ RPRENTH:CMP CX, 0       ;如果栈已经空了，则说明括号匹配不正确�
         MOV [SI], BL
         INC SI
         JMP RPRENTH
-        
+
 L1:     CMP BYTE PTR [BP], '+'      ;L1表示优先级1，如果是乘除将直接跳过和L1的比较
         JE POPOP
         CMP BYTE PTR [BP], '-'
@@ -333,14 +333,14 @@ POPOP:  POP BX
         MOV[SI], BL
         INC SI
         JMP OP
-        
+
 POPALL: CMP CL, 0       ;如果玩家捣乱输入的表达式只有一个数字，没有可以pop的，所以加一个判断
         JE DONE
         POP AX
         MOV [SI], AL
         INC SI
         LOOP POPALL
-        
+
         LEA DI, (SUFFIXEXP) ;遍历后缀表达式
         MOV BX, DI
         MOV CX, 20
@@ -348,9 +348,9 @@ POPALL: CMP CL, 0       ;如果玩家捣乱输入的表达式只有一个数字�
         CLD
         REPNZ SCASB
         JZ FAIL
-        
-        
-DONE:   POP CX          
+
+
+DONE:   POP CX
         POP AX
         MOV BX, 1       ;转换成功则返回1
         RET
@@ -363,13 +363,13 @@ TOSUFFIX ENDP
 ISMATCH PROC
         MOV AX, 0
         MOV BX, 0
-        
+
         LEA DI, NUMBUFFER       ;将数字部分放到NUMBUFFER 以供后面用来MATCH数字
         LEA SI, CURRENTITEM
         MOV CX, 4
         CLD
         REP MOVSB
-        
+
         LEA DI, SUFFIXEXP
 MTLP:   MOV DL, [DI]            ;外层循环，遍历后缀表达式
         CMP DL, 0
@@ -390,10 +390,10 @@ BFLP:   MOV AL, [SI]            ;内层循环，和NUMBUFFER比较
         MOV CL, 0               ;如果匹配到了则将NUMBUFER中对应的数置为0
         MOV [SI] - 1, CL
         JMP MTLP
-        
-MTWRONG:MOV BX, 0        
+
+MTWRONG:MOV BX, 0
         RET
-        
+
 MTRIGHT:MOV BX, 1
         RET
 ISMATCH ENDP
@@ -402,12 +402,12 @@ CALCULATE PROC
         MOV AX, 0
         MOV BX, 0
         MOV DX, 0
-        
+
         LEA DI, SUFFIXEXP
 CCLP:   MOV DL, [DI]
         CMP DL, 0
         JE CCDONE
-        INC DI 
+        INC DI
         CMP DL, '+'
         JE CCPLUS
         CMP DL, '-'
@@ -419,7 +419,7 @@ CCLP:   MOV DL, [DI]
         CMP DL, 9
         JNG CCNUM
         JMP CCLP
-        
+
 CCPLUS: POP BX
         POP AX
         ADD BL, AL
@@ -448,7 +448,7 @@ CCDIV:  POP BX
 
 CCNUM:  PUSH DX
         JMP CCLP
-        
+
 CCDONE: POP BX
         RET
 CALCULATE ENDP
@@ -461,13 +461,13 @@ CLEAREXP PROC
         CLD
         MOV AX, 0
         REP STOSB
-        
+
         LEA DI, SUFFIXEXP       ;将SUFFIXEXP全部清零
         MOV CX, 20
         CLD
         MOV AX, 0
         REP STOSB
-        
+
         POP CX
         POP AX
         RET
@@ -481,7 +481,7 @@ CLEARTIME PROC
         CLD
         MOV AX, 0
         REP STOSB
-        
+
         POP CX
         POP AX
         RET
@@ -491,16 +491,16 @@ SETSTARTTIME PROC
         PUSH AX
         PUSH CX
         PUSH DX
-        
+
         MOV AH, 02H
         INT 1AH
         LEA DI, STARTTIME
         MOV [DI], CH        ;小时的BCD码
         MOV [DI] + 1, CL    ;分钟
         MOV [DI] + 2, DH    ;秒
-        
+
         CALL BCD2BIN        ;将BCD码的时间转为二进制
-        
+
         POP DX
         POP CX
         POP AX
@@ -511,11 +511,11 @@ ISINTIME PROC
         PUSH AX
         PUSH CX
         PUSH DX
-        
+
         MOV AX, 0   ;清零
         MOV BX, 0
         MOV DX, 0
-        
+
         MOV AH, 02H
         INT 1AH
         LEA DI, NOWTIME
@@ -524,7 +524,7 @@ ISINTIME PROC
         MOV [DI] + 2, DH    ;秒
 
         CALL BCD2BIN
-        
+
         LEA SI, STARTTIME
         LEA DI, NOWTIME
         MOV AH, 0
@@ -538,35 +538,35 @@ CMPTO1: CMP BL, 1           ;由于限定了游戏时间最多一小时，所以
         JG OVERTIME
         MOV DX, 3600        ;如果刚好为1，则直接给DX赋值3600（秒）
         JE MINUTE
-        MOV DX, 0           ;否则为0 
-        
+        MOV DX, 0           ;否则为0
+
 MINUTE: MOV AL, [SI] + 1
         MOV BL, [DI] + 1
         SUB BL, AL
         MOV AL, 60          ;相减的结果乘以60得到秒数，加上DX
         MUL BL
         ADD DX, AX
-        
+
         MOV AL, [SI] + 2
         MOV BL, [DI] + 2
         SUB BL, AL          ;相减的结果是秒数，直接加上DX
         MOV BH, 0
         ADD DX, BX
-        
+
         MOV AX, [PLAYTIME]  ;获取玩家设定的游戏时间，与DX比较，判断是否超时
         CMP DX, AX
         JNG INTIME
-        
+
 OVERTIME:MOV BX, 0          ;如果超时则将BX赋值为0，作为返回值
         JMP TDONE
 
 INTIME: MOV BX, 1           ;如果没有超时，则将BX赋值为1
         JMP TDONE
-        
+
 TDONE:  POP DX
         POP CX
         POP AX
-        RET        
+        RET
 ISINTIME ENDP
 
 ;将BCD码格式的时间转换成二进制，需要传入参数DI，表示起始偏移地址
@@ -575,11 +575,11 @@ BCD2BIN PROC
         PUSH BX
         PUSH CX
         PUSH DX
-        
+
         MOV CX, 3       ;时间共有三个字节，时分秒
 BCDLP:  MOV AL, [DI]
         MOV AH, 0
-        MOV BL, 16      
+        MOV BL, 16
         DIV BL          ;除以16
         MOV DL, AH      ;余数存到DL
         MOV BL, 10      ;乘以10得到数值
@@ -588,7 +588,7 @@ BCDLP:  MOV AL, [DI]
         MOV [DI], AL    ;存到原来的内存单元
         INC DI
         LOOP BCDLP
-        
+
         POP DX
         POP CX
         POP BX
@@ -603,25 +603,24 @@ SHOWANSWER PROC
         MOV AL, [DI]
         CMP AL, '0'
         JE SHOWNO
-        
+
         LEA DX, ANSWERPROMPT    ;显示答案提示
         MOV AH, 09H
         INT 21H
-        
+
         LEA DX, CURRENTITEM + 4 ;显示参考答案
         MOV AH, 09H
         INT 21H
         JMP SHOWDONE
-        
+
 SHOWNO: LEA DX, NOANSWERPROMPT  ;输出答案：无解
         MOV AH, 09H
         INT 21H
         JMP SHOWDONE
-        
+
 SHOWDONE:POP AX
         RET
 SHOWANSWER ENDP
 
 CODE ENDS
     END START
-    

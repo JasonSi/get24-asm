@@ -1,5 +1,4 @@
-# �Զ����ɵ�EXE��OBJ�ļ�
-# ��Ȼanswers.txtҲ�Ǵ������ɵģ���Ϊ�˷������Լ���汾����
+# 自动生成的EXE和OBJ文件
+# 虽然answers.txt也是代码生成的，但为了方便所以加入版本控制
 *.exe
 *.obj
-
