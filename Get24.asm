@@ -7,8 +7,8 @@ DATA SEGMENT
     STARTPROMPT DB 0AH,0DH,'Game is on! Here are four numbers ','$'
     
     CURRENTITEM DB 16 DUP(?)    ;当前的数字组合及答案内容，比如‘1118(1+(1+1))*8$’
-    CURRENTNUM DB 4 DUP(?),'$'
-    NUMBUFFER DB 4 DUP(?),'$'
+    CURRENTNUM DB 4 DUP(?),'$'  ;记录当前的数字
+    NUMBUFFER DB 4 DUP(?),'$'   ;和上面一样，用于判断玩家数字合法的缓冲区
     FILEPATH DB 'ANSWERS.TXT'
     ANSWERS DB 7920 DUP(?)      ;共有495条数据，每条数据占16字节
     
@@ -499,6 +499,8 @@ SETSTARTTIME PROC
         MOV [DI] + 1, CL    ;分钟
         MOV [DI] + 2, DH    ;秒
         
+        CALL BCD2BIN        ;将BCD码的时间转为二进制
+        
         POP DX
         POP CX
         POP AX
@@ -521,12 +523,78 @@ ISINTIME PROC
         MOV [DI] + 1, CL    ;分钟
         MOV [DI] + 2, DH    ;秒
 
-        MOV BX, 0
-        POP DX
+        CALL BCD2BIN
+        
+        LEA SI, STARTTIME
+        LEA DI, NOWTIME
+        MOV AH, 0
+        MOV AL, [SI]
+        MOV BL, [DI]
+        SUB BL, AL
+        CMP BL, 24          ;如果大于24，应当是溢出了，跨了午夜，所以加上24
+        JNG CMPTO1
+        ADD BL, 24
+CMPTO1: CMP BL, 1           ;由于限定了游戏时间最多一小时，所以如果小时相减大于1，则超过1小时
+        JG OVERTIME
+        MOV DX, 3600        ;如果刚好为1，则直接给DX赋值3600（秒）
+        JE MINUTE
+        MOV DX, 0           ;否则为0 
+        
+MINUTE: MOV AL, [SI] + 1
+        MOV BL, [DI] + 1
+        SUB BL, AL
+        MOV AL, 60          ;相减的结果乘以60得到秒数，加上DX
+        MUL BL
+        ADD DX, AX
+        
+        MOV AL, [SI] + 2
+        MOV BL, [DI] + 2
+        SUB BL, AL          ;相减的结果是秒数，直接加上DX
+        MOV BH, 0
+        ADD DX, BX
+        
+        MOV AX, [PLAYTIME]  ;获取玩家设定的游戏时间，与DX比较，判断是否超时
+        CMP DX, AX
+        JNG INTIME
+        
+OVERTIME:MOV BX, 0          ;如果超时则将BX赋值为0，作为返回值
+        JMP TDONE
+
+INTIME: MOV BX, 1           ;如果没有超时，则将BX赋值为1
+        JMP TDONE
+        
+TDONE:  POP DX
         POP CX
         POP AX
         RET        
 ISINTIME ENDP
+
+;将BCD码格式的时间转换成二进制，需要传入参数DI，表示起始偏移地址
+BCD2BIN PROC
+        PUSH AX
+        PUSH BX
+        PUSH CX
+        PUSH DX
+        
+        MOV CX, 3       ;时间共有三个字节，时分秒
+BCDLP:  MOV AL, [DI]
+        MOV AH, 0
+        MOV BL, 16      
+        DIV BL          ;除以16
+        MOV DL, AH      ;余数存到DL
+        MOV BL, 10      ;乘以10得到数值
+        MUL BL
+        ADD AL, DL      ;加上余数即为最终的结果
+        MOV [DI], AL    ;存到原来的内存单元
+        INC DI
+        LOOP BCDLP
+        
+        POP DX
+        POP CX
+        POP BX
+        POP AX
+        RET
+BCD2BIN ENDP
 
 SHOWANSWER PROC
         PUSH AX
@@ -556,3 +624,4 @@ SHOWANSWER ENDP
 
 CODE ENDS
     END START
+    
